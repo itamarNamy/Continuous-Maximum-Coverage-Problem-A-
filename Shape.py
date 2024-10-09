@@ -81,6 +81,42 @@ class Area:
 
         # Create a rectangle using Shapely's Polygon
         self.shape = Polygon([(x, y), (x + width, y), (x + width, y + height), (x, y + height)])
+class ProtectedArea:
+
+   def __init__(self,n_polygons=100, n_points=5, radius=0.5):
+      self.polygons = self.generate_non_intersecting_polygons(n_polygons, n_points, radius)
+      self.unitedArea = unary_union(self.polygons)
+
+   def random_convex_polygon(self,n_points=5, center=(0, 0), radius=1):
+      """
+      Generate a random convex polygon with n_points around a center point within a given radius.
+      """
+      angle_step = 360 / n_points
+      points = []
+      for i in range(n_points):
+         angle = random.uniform(i * angle_step, (i + 1) * angle_step)
+         r = random.uniform(0.5 * radius, radius)
+         x = center[0] + r * np.cos(np.radians(angle))
+         y = center[1] + r * np.sin(np.radians(angle))
+         points.append((x, y))
+      
+      # Return the convex hull of the points
+      polygon = Polygon(points).convex_hull
+      return polygon
+
+   def generate_non_intersecting_polygons(self,n_polygons=100, n_points=5, radius=5):
+      polygons = []
+      for i in range(n_polygons):
+         while True:
+               center = (random.uniform(-10, 10), random.uniform(-10, 10))  # Generate random center point
+               polygon = self.random_convex_polygon(n_points=n_points, center=center, radius=radius)
+               
+               # Check if the new polygon intersects with any existing ones
+               if not any(polygon.intersects(p) for p in polygons):
+                  polygons.append(polygon)
+                  break
+      return polygons
+
 
 class Obstacle:
    def __init__(self,shape=None):
@@ -245,40 +281,45 @@ class Obstacle:
 
    
 class Enviroment:
-   def __init__(self):
+   def __init__(self,systems_num = 3,env_borders = ((-10,10),(-10,10))):
       self.areas = []
       self.obstacles = []
       self.systems = []
-      self.areas_multipolygon = None
+      self.areas = ProtectedArea()
       self.obstacles_multipolygon = None
+      self.systems_num = systems_num
+      self.env_borders = env_borders
       # self.blocked_systems = []
    def build_env(self):
-      systems_num = 3
       areas_num = 15
       obstacles_num = 0
-      systems_locations = np.random.uniform(-10,10,size=(systems_num,2))
-      steer_angles = np.random.uniform(0,360,size=(systems_num))
+      # systems_locations = np.random.uniform(-10,10,size=(self.systems_num,2))
+      systems_x_locations = np.random.uniform(self.env_borders[0][0],self.env_borders[0][1],
+                                              size=(self.systems_num,))
+      systems_y_locations = np.random.uniform(self.env_borders[0][0],self.env_borders[0][1],
+                                              size=(self.systems_num,))
+      steer_angles = np.random.uniform(0,360,size=(self.systems_num))
       self.obstacles = [Obstacle() for _ in range(obstacles_num)]
       self.obstacles_multipolygon = Obstacle(unary_union([obstacle.shape for obstacle in self.obstacles]))
-
-      for system_i in range(systems_num):
-         self.systems.append(System(location=(systems_locations[system_i,0],systems_locations[system_i,1]),
+      for system_i in range(self.systems_num):
+         self.systems.append(System(location=(systems_x_locations[system_i],systems_y_locations[system_i]),
                              steer_angle=steer_angles[system_i]))
          self.systems[system_i].build_shape(self.obstacles_multipolygon)
          # blocked_system = self.obstacles.calc_shadow(self.systems[system_i])
          # self.blocked_systems.append()
 
-      self.areas = [Area() for _ in range(areas_num)]
-      self.areas_multipolygon = unary_union([area.shape for area in self.areas])
+      # self.areas = [Area() for _ in range(areas_num)]
+      # self.areas = unary_union([area.shape for area in self.areas])
 
-
-      # self.united_area = cascaded_union([area.rectangle for area in self.areas])
 
    def draw(self,path,optimized='location',mode=''):
+      #Drawing areas needed to be covered
       fig, ax = plt.subplots(figsize=(8, 8))
-      for poly in self.areas_multipolygon.geoms:
+      for poly in self.areas.polygons:
          x, y = poly.exterior.xy
-         ax.fill(x, y, hatch='/', color='lightgray', edgecolor='black')
+         ax.fill(x, y, hatch='//', color='lightgray', edgecolor='black')
+      
+      #Drawing areas covered by systems
       for system in self.systems:
          if system.shape is None:
             continue
@@ -306,67 +347,79 @@ class Enviroment:
             title += 'Random Rectangles and systems'
       now = datetime.datetime.now() 
       ax.set_title(title+ ' total coverage {:.4f}'.format(coverage))
-      ax.set_xlim((-20,20))
-      ax.set_ylim((-20,20))
+      ax.set_xlim((self.env_borders[0][0] * 1.8,self.env_borders[0][1] * 1.8))
+      ax.set_ylim((self.env_borders[1][0] * 1.8,self.env_borders[1][1] * 1.8))
       if path:
          fig.savefig(os.path.join(path,now.strftime("%m%d-%H%M") + ' ' + title +'.png')  ,bbox_inches='tight')
       plt.show()
 
-   def compute_coverage(self):
+   def compute_coverage(self,mode='normal'):
       total_intersection_area = 0
-      for system_i,system in enumerate(self.systems):
-         for part in self.areas:
-            if system.shape is None:
-               continue
-            intersection_result = system.shape.intersection(part.shape)
+      
+      #computing only unique coverage
+      if mode == 'normal':
+         systems_multipolygon = unary_union([sys.shape for sys in self.systems])
+         intersection_result = systems_multipolygon.intersection(self.areas.unitedArea)
+         total_intersection_area = intersection_result.area
+      #computing also overlapping coverage
+
+      elif mode == 'k-coverage':
+         for system_i,system in enumerate(self.systems):
+            # for part in self.areas.polygons:
+            #    if system.shape is None:
+            #       continue
+            intersection_result = system.shape.intersection(self.areas.unitedArea)
             total_intersection_area += intersection_result.area
       return total_intersection_area
 
-   def optimize(self,optimized='location'):
+   def optimize(self,optimized='location',angles_num = 100,x_coords_num = 4,y_coords_num = 4):
       #optimizing steering angle for each system
-      # areas_multipolygon = unary_union([area.shape for area in self.areas])
-      rotation_angles = np.linspace(0,360,100)
-      integer_range = range(-10, 11,4)
-      locations = [(x, y) for x in integer_range for y in integer_range]
+      # areas = unary_union([area.shape for area in self.areas])
+      # Setting a grid to explore coverage on it's points 
+      steering_angles = np.linspace(0,360,angles_num)
+      x_coords = np.linspace(self.env_borders[0][0],self.env_borders[0][1],x_coords_num)
+      y_coords = np.linspace(self.env_borders[1][0],self.env_borders[1][1],y_coords_num)
+      locations = [(x, y) for x in x_coords for y in y_coords]
 
       for _ in range(len(self.systems)):
          chosen_system = 0
-         chosen_rotation = 0
+         chosen_steering = 0
          chosen_location = (0,0)
          max_intersection_area = 0
-         # looking for system and angle that maximizes the intersection area
+         # looking for system, angle and location that maximize the intersection area
          for system_i,system in enumerate(self.systems):
+            # skip a system that was already optimized
             if self.systems[system_i].optimized == True:
                continue
-            for rotation in rotation_angles:
+            for steering in steering_angles:
                for location in locations:
                   if optimized=='steering':
                      location = system.location
 
-                  system.update_values(steer_angle=rotation,location=location,obstacles=None)
+                  system.update_values(steer_angle=steering,location=location,obstacles=None)
                   total_intersection_area = 0
                   systems_multipolygon = unary_union([sys.shape for sys in self.systems])
                   
                   # compute the coverage for certain steering angle and system
 
-                  intersection_result = systems_multipolygon.intersection(self.areas_multipolygon)
+                  intersection_result = systems_multipolygon.intersection(self.areas.unitedArea)
                   total_intersection_area = intersection_result.area
                   if total_intersection_area > max_intersection_area:
 
                      max_intersection_area = total_intersection_area
                      chosen_system = system_i
-                     chosen_rotation = rotation
+                     chosen_steering = steering
                      chosen_location = location
 
                   if optimized=='steering':
                      break
 
-         self.systems[chosen_system].update_values(steer_angle=chosen_rotation,
+         self.systems[chosen_system].update_values(steer_angle=chosen_steering,
                                                    location=chosen_location,obstacles=None)
          self.systems[chosen_system].optimized = True
          # print(f'max_intersection_area:{max_intersection_area}')
          # print(f'chosen_system:{chosen_system}')
-         # print(f'chosen_rotation:{chosen_rotation}')
+         # print(f'chosen_steering:{chosen_steering}')
    def Adam_optimize(self, optimized='location', learning_rate=0.1, beta1=0.9, beta2=0.999,delta=1e-2, epsilon=1e-8, max_iter=1000):
       """
     Adam optimizer for finding local maxima of a black-box function.
@@ -376,7 +429,7 @@ class Enviroment:
          for system_i,system in enumerate(self.systems):
             system.update_values(steer_angle=steers[system_i],obstacles=None)
          systems_multipolygon = unary_union([sys.shape for sys in self.systems])
-         intersection_result = systems_multipolygon.intersection(self.areas_multipolygon)
+         intersection_result = systems_multipolygon.intersection(self.areas.unitedArea)
          return intersection_result.area
       
       position = np.array([sys.steer_angle for sys in self.systems])

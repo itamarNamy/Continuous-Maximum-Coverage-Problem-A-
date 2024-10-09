@@ -1,4 +1,4 @@
-from Shape_with_multipolygon import *
+from Shape import *
 from multiprocessing import Pool
 
 def example(optimization):
@@ -86,8 +86,8 @@ def stats(optimization):
 if __name__ == "__main__":
 
     optimization='steering'
-    stats(optimization='steering')
-    # example(optimization=optimization)
+    # stats(optimization='steering')
+    example(optimization=optimization)
 
     # running_times = []
     # for _ in range(2):
