@@ -57,30 +57,7 @@ class System:
 
 
 
-class Area:
-   def __init__(self,width_range=(1, 5), height_range=(1, 5), x_range=(-10, 10), y_range=(-10, 10)):
-        if len(width_range)==1:
-           width = width_range
-        else:
-           width = random.uniform(*width_range)
 
-        if len(height_range)==1:
-           height = height_range 
-        else:
-          height = random.uniform(*height_range)
-
-        if len(x_range)==1:
-           x = x_range 
-        else:
-          x = random.uniform(*x_range)
-
-        if len(y_range)==1:
-           y = y_range 
-        else:
-          y = random.uniform(*y_range)
-
-        # Create a rectangle using Shapely's Polygon
-        self.shape = Polygon([(x, y), (x + width, y), (x + width, y + height), (x, y + height)])
 class ProtectedArea:
 
    def __init__(self,n_polygons=100, n_points=5, radius=0.5):
@@ -281,38 +258,39 @@ class Obstacle:
 
    
 class Enviroment:
-   def __init__(self,systems_num = 3,env_borders = ((-10,10),(-10,10))):
-      self.areas = []
-      self.obstacles = []
+   def __init__(self,n_systems = 4,env_borders = ((-10,10),(-10,10)),n_polygons = 100):
       self.systems = []
-      self.areas = ProtectedArea()
-      self.obstacles_multipolygon = None
-      self.systems_num = systems_num
+      self.areas = ProtectedArea(n_polygons)
+      self.n_systems = n_systems
+      self.systems_area = 0
       self.env_borders = env_borders
       # self.blocked_systems = []
-   def build_env(self):
-      areas_num = 15
       obstacles_num = 0
-      # systems_locations = np.random.uniform(-10,10,size=(self.systems_num,2))
+      # systems_locations = np.random.uniform(-10,10,size=(self.n_systems,2))
       systems_x_locations = np.random.uniform(self.env_borders[0][0],self.env_borders[0][1],
-                                              size=(self.systems_num,))
+                                              size=(self.n_systems,))
       systems_y_locations = np.random.uniform(self.env_borders[0][0],self.env_borders[0][1],
-                                              size=(self.systems_num,))
-      steer_angles = np.random.uniform(0,360,size=(self.systems_num))
+                                              size=(self.n_systems,))
+      systems_ranges = np.random.uniform((self.env_borders[0][1]-self.env_borders[0][0])/4,
+                                         (self.env_borders[0][1]-self.env_borders[0][0])/2,
+                                              size=(self.n_systems,))
+      steer_angles = np.random.uniform(0,360,size=(self.n_systems))
       self.obstacles = [Obstacle() for _ in range(obstacles_num)]
       self.obstacles_multipolygon = Obstacle(unary_union([obstacle.shape for obstacle in self.obstacles]))
-      for system_i in range(self.systems_num):
-         self.systems.append(System(location=(systems_x_locations[system_i],systems_y_locations[system_i]),
-                             steer_angle=steer_angles[system_i]))
+      for system_i in range(self.n_systems):
+         self.systems.append(System(steer_angle=steer_angles[system_i],max_dist = systems_ranges[system_i],
+                                    location=(systems_x_locations[system_i],systems_y_locations[system_i]),
+                             ))
          self.systems[system_i].build_shape(self.obstacles_multipolygon)
+
+         self.systems_area += self.systems[system_i].shape.area
          # blocked_system = self.obstacles.calc_shadow(self.systems[system_i])
          # self.blocked_systems.append()
 
-      # self.areas = [Area() for _ in range(areas_num)]
-      # self.areas = unary_union([area.shape for area in self.areas])
 
 
-   def draw(self,path,optimized='location',mode=''):
+
+   def draw(self,path,save=False,optimized='location',mode=''):
       #Drawing areas needed to be covered
       fig, ax = plt.subplots(figsize=(8, 8))
       for poly in self.areas.polygons:
@@ -328,6 +306,7 @@ class Enviroment:
          elif isinstance(system.shape, MultiPolygon):
             for geom in system.shape.geoms:
                ax.plot(*geom.exterior.xy)
+
          #draw obstacles
       if isinstance(self.obstacles_multipolygon.shape, Polygon):
          x, y = self.obstacles_multipolygon.shape.exterior.xy
@@ -346,16 +325,22 @@ class Enviroment:
       else:
             title += 'Random Rectangles and systems'
       now = datetime.datetime.now() 
-      ax.set_title(title+ ' total coverage {:.4f}'.format(coverage))
-      ax.set_xlim((self.env_borders[0][0] * 1.8,self.env_borders[0][1] * 1.8))
-      ax.set_ylim((self.env_borders[1][0] * 1.8,self.env_borders[1][1] * 1.8))
-      if path:
+      ax.set_title(title)
+      ax.set_xlim((self.env_borders[0][0] * 1.6,self.env_borders[0][1] * 1.6))
+      ax.set_ylim((self.env_borders[1][0] * 1.6,self.env_borders[1][1] * 1.6))
+      ax.plot([], [], ' ', label=f"Total Protection Area: {self.areas.unitedArea.area:.2f}")
+      ax.plot([], [], ' ', label=f"Total Systems Area: {self.areas.unitedArea.area:.2f}")
+      ax.plot([], [], ' ', label=f"Coverage Percentage: {100*coverage/self.areas.unitedArea.area:.2f}%")
+      # ax.text(0, 0, f"Total Protection Area: {self.areas.unitedArea.area:.2f}", fontsize=8, color="purple")
+      # ax.text(0, 1, f"Total Systems Area: {self.areas.unitedArea.area:.2f}", fontsize=8, color="purple")
+      # ax.text(0, 2, f"Coverage Percentage: {100*coverage/self.areas.unitedArea.area:.2f}%", fontsize=8, color="purple")
+      ax.legend()
+      if save:
          fig.savefig(os.path.join(path,now.strftime("%m%d-%H%M") + ' ' + title +'.png')  ,bbox_inches='tight')
       plt.show()
 
    def compute_coverage(self,mode='normal'):
       total_intersection_area = 0
-      
       #computing only unique coverage
       if mode == 'normal':
          systems_multipolygon = unary_union([sys.shape for sys in self.systems])
