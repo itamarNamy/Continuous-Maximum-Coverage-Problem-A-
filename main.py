@@ -2,21 +2,28 @@ from Shape import *
 from multiprocessing import Pool
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import pandas as pd
+import datetime
 
-def example(optimization,path,save = False):
+def drawing_example(optimization,path,save = False):
+    fig, ax = plt.subplots(figsize=(14, 14),nrows=2,ncols=2)
+
     env = Enviroment()
-    env.draw(path, save, optimized=None)
+    env.draw(ax[0][0], optimized=None)
 
     env.Adam_optimize(optimized=optimization)
-    env.draw(path, save, optimized=optimization,mode='Adam')
+    env.draw(ax[0][1], optimized=optimization,mode='Adam')
 
     env.optimize(optimized=optimization)
-    env.draw(path, save, optimized=optimization)
+    env.draw(ax[1][0], optimized=optimization)
 
     env.Adam_optimize(optimized=optimization)
-    env.draw(path, save, optimized=optimization,mode='Adam')
+    env.draw(ax[1][1], optimized=optimization,mode='Combined')
+    now = datetime.datetime.now()
+    if save:
+        fig.savefig(os.path.join(path,now.strftime("%m%d-%H%M") +'.png')  ,bbox_inches='tight')
+    plt.show()
 
-def scenario_optimization(optimization):
+def greedy_combined_comp(optimization):
     #Building and optimizing scenario
     env = Enviroment()
     init_coverage = env.compute_coverage()
@@ -31,6 +38,32 @@ def scenario_optimization(optimization):
     combined_coverage = env.compute_coverage()
     return [init_coverage, adam_coverage, bf_coverage, combined_coverage, systems_area, protection_area]
 
+def run_optimization(env:Enviroment, method:str, opt_kind:str ,params:dict)->float:
+    if method == 'Adam':
+        env.Adam_optimize(delta = params['delta'])
+    elif method == 'Combined':
+        env.optimize(optimized = opt_kind)
+        env.Adam_optimize(delta = params['delta'])
+    return env.compute_coverage()
+
+def params_opt():
+    env = Enviroment()
+    protection_area = env.areas.unitedArea.area
+    env.optimize(optimized='location')
+    deltas = protection_area * np.logspace(-7,1,num=9)
+    params = {}
+    deltas_stats = []
+    for delta in deltas:
+        curr_env = env.copy()
+        params['delta'] = delta
+        coverage = run_optimization(curr_env, method='Adam', opt_kind='location', params = params)
+        print(f'delta {delta/protection_area:.6f}:{coverage}')
+        deltas_stats.append({'delta':delta/protection_area,'coverage':coverage})
+    deltas_df = pd.DataFrame(deltas_stats)
+    output_path = os.path.join(r'C:\Technion\RL\Code\Basic problem\data tables','deltas stats.csv')
+    deltas_df.to_csv(output_path,mode='a',index=False,header=not os.path.exists(output_path))
+
+
 
 
 def stats(optimization):
@@ -43,7 +76,7 @@ def stats(optimization):
     
     #     results = pool.starmap(scenario_optimization, [(optimization,) for _ in range(2)])
     with ProcessPoolExecutor() as executor:
-        futures = [executor.submit(scenario_optimization,optimization) for _ in range(4)]
+        futures = [executor.submit(greedy_combined_comp,optimization) for _ in range(4)]
 
         # Process the results as they complete
         for future in as_completed(futures):
@@ -62,8 +95,8 @@ def stats(optimization):
             results.append(stats_dict)
     
     results_df = pd.DataFrame(results)
-    results_df.to_csv(os.path.join(r'C:\Technion\RL\Code\Basic problem\data tables','stats.csv'),mode='a',
-    index=False)
+    output_path = os.path.join(r'C:\Technion\RL\Code\Basic problem\data tables',optimization + ' stats.csv')
+    results_df.to_csv(output_path,mode='a',index=False,header=not os.path.exists(output_path))
 
 
 
@@ -96,11 +129,12 @@ def stats(optimization):
 
 
 if __name__ == "__main__":
-    optimization='steering'
+    optimization='location'
         # location / steering
     path = r'C:\Technion\RL\Code\Basic problem\figs\\' + optimization + ' optimization'
-    stats(optimization='steering')
-    # example(optimization=optimization,path = path, save= True)
+    # stats(optimization=optimization)
+    drawing_example(optimization=optimization,path = path, save= True)
+    # params_opt()
 
     # running_times = []
     # for _ in range(2):

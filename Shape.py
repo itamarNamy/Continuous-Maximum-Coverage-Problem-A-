@@ -6,7 +6,6 @@ from math import asin, atan2, cos, degrees, radians, sin
 import matplotlib.pyplot as plt
 import os
 import random
-import datetime
 import copy
 import pandas as pd
 import seaborn as sns
@@ -290,9 +289,9 @@ class Enviroment:
 
 
 
-   def draw(self,path,save=False,optimized='location',mode=''):
+   def draw(self,ax,optimized='location',mode=''):
       #Drawing areas needed to be covered
-      fig, ax = plt.subplots(figsize=(8, 8))
+      
       for poly in self.areas.polygons:
          x, y = poly.exterior.xy
          ax.fill(x, y, hatch='//', color='lightgray', edgecolor='black')
@@ -324,20 +323,18 @@ class Enviroment:
             title += 'Optimized steering and location'
       else:
             title += 'Random Rectangles and systems'
-      now = datetime.datetime.now() 
+       
       ax.set_title(title)
       ax.set_xlim((self.env_borders[0][0] * 1.6,self.env_borders[0][1] * 1.6))
       ax.set_ylim((self.env_borders[1][0] * 1.6,self.env_borders[1][1] * 1.6))
       ax.plot([], [], ' ', label=f"Total Protection Area: {self.areas.unitedArea.area:.2f}")
-      ax.plot([], [], ' ', label=f"Total Systems Area: {self.areas.unitedArea.area:.2f}")
+      ax.plot([], [], ' ', label=f"Total Systems Area: {self.systems_area:.2f}")
       ax.plot([], [], ' ', label=f"Coverage Percentage: {100*coverage/self.areas.unitedArea.area:.2f}%")
       # ax.text(0, 0, f"Total Protection Area: {self.areas.unitedArea.area:.2f}", fontsize=8, color="purple")
       # ax.text(0, 1, f"Total Systems Area: {self.areas.unitedArea.area:.2f}", fontsize=8, color="purple")
       # ax.text(0, 2, f"Coverage Percentage: {100*coverage/self.areas.unitedArea.area:.2f}%", fontsize=8, color="purple")
       ax.legend()
-      if save:
-         fig.savefig(os.path.join(path,now.strftime("%m%d-%H%M") + ' ' + title +'.png')  ,bbox_inches='tight')
-      plt.show()
+
 
    def compute_coverage(self,mode='normal'):
       total_intersection_area = 0
@@ -410,20 +407,50 @@ class Enviroment:
     Adam optimizer for finding local maxima of a black-box function.
     """
       
-      def objective_function(steers):
+      def objective_function(new_position):
+         systems_n = len(self.systems)
          for system_i,system in enumerate(self.systems):
-            system.update_values(steer_angle=steers[system_i],obstacles=None)
+            if optimized == 'steering':
+               system.update_values(steer_angle=new_position[system_i],obstacles=None)
+            elif optimized == 'location':
+               system.update_values(steer_angle=new_position[system_i],location = 
+                                 (new_position[system_i+systems_n],new_position[system_i+ 2 * systems_n])
+                                 ,obstacles=None)
          systems_multipolygon = unary_union([sys.shape for sys in self.systems])
          intersection_result = systems_multipolygon.intersection(self.areas.unitedArea)
          return intersection_result.area
       
-      position = np.array([sys.steer_angle for sys in self.systems])
+      def numerical_gradient(x, h):
+        """Estimate gradient using finite differences."""
+        grad = np.zeros_like(x)
+        for i in range(len(x)):
+            x_h1 = np.copy(x)
+            x_h2 = np.copy(x)
+            x_h1[i] += h[i]
+            x_h2[i] -= h[i]
+            grad[i] = (objective_function(x_h1) - objective_function(x_h2)) / (2 * h[i])
+        return grad
+
+
+
+
+      if optimized == 'steering':
+         position = np.array([sys.steer_angle for sys in self.systems])
+      elif optimized == 'location':
+         position = np.array([sys.steer_angle for sys in self.systems] +
+                          [sys.location[0] for sys in self.systems] +
+                          [sys.location[1] for sys in self.systems])
       velocity = 0
       m = 0
       v = 0
+      if optimized == 'steering':
+         deltas_arr = np.repeat(delta,len(self.systems))
+      elif optimized == 'location':
+         deltas = [delta, delta * 0.1, delta * 0.1]
+         deltas_arr = np.repeat(deltas,len(self.systems))
 
       for t in range(1, max_iter + 1):
-         gradient = (objective_function(position + delta) - objective_function(position - delta)) / (2 * delta)
+         gradient = numerical_gradient(x = position, h = deltas_arr)
          m = beta1 * m + (1 - beta1) * gradient
          v = beta2 * v + (1 - beta2) * (gradient ** 2)
          m_hat = m / (1 - beta1 ** t)
@@ -434,3 +461,6 @@ class Enviroment:
          #    print(f'step {t} position: {position}')
          #    print(f'step {t}: {objective_function(position)}')
       return position
+   def copy(self):
+        # Using deepcopy to create a deep copy of the object
+      return copy.deepcopy(self)
