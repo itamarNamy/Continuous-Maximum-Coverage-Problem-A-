@@ -1,14 +1,13 @@
-import numpy as np
+
 from shapely.geometry import Point,MultiPolygon,LineString
-from shapely.geometry.polygon import Polygon
 from shapely.ops import unary_union
 from math import asin, atan2, cos, degrees, radians, sin
 import matplotlib.pyplot as plt
 import os
-import random
 import copy
 import pandas as pd
 import seaborn as sns
+from generator import *
 
 class System:
   def __init__(self,steer_angle,max_dist=10,opening_angle=90,location=(0,0),min_dist=0):
@@ -60,38 +59,10 @@ class System:
 class ProtectedArea:
 
    def __init__(self,n_polygons=100, n_points=5, radius=0.5):
-      self.polygons = self.generate_non_intersecting_polygons(n_polygons, n_points, radius)
+      self.polygons = generate_non_intersecting_polygons(n_polygons, n_points, radius)
       self.unitedArea = unary_union(self.polygons)
 
-   def random_convex_polygon(self,n_points=5, center=(0, 0), radius=1):
-      """
-      Generate a random convex polygon with n_points around a center point within a given radius.
-      """
-      angle_step = 360 / n_points
-      points = []
-      for i in range(n_points):
-         angle = random.uniform(i * angle_step, (i + 1) * angle_step)
-         r = random.uniform(0.5 * radius, radius)
-         x = center[0] + r * np.cos(np.radians(angle))
-         y = center[1] + r * np.sin(np.radians(angle))
-         points.append((x, y))
-      
-      # Return the convex hull of the points
-      polygon = Polygon(points).convex_hull
-      return polygon
 
-   def generate_non_intersecting_polygons(self,n_polygons=100, n_points=5, radius=5):
-      polygons = []
-      for i in range(n_polygons):
-         while True:
-               center = (random.uniform(-10, 10), random.uniform(-10, 10))  # Generate random center point
-               polygon = self.random_convex_polygon(n_points=n_points, center=center, radius=radius)
-               
-               # Check if the new polygon intersects with any existing ones
-               if not any(polygon.intersects(p) for p in polygons):
-                  polygons.append(polygon)
-                  break
-      return polygons
 
 
 class Obstacle:
@@ -255,13 +226,20 @@ class Obstacle:
             covered_system.shape = cls.polygon_shadow(obstacle,covered_system)
       return covered_system.shape
 
-   
+class LocationConstraints:
+   def __init__(self):
+      self.polygons = Polygon([(-2, -2), (-2, 2), (2, 2), (2, -2)]),
+
+      # self.polygons = generate_non_intersecting_polygons(n_polygons, n_points, radius)
+
+
 class Enviroment:
    def __init__(self,n_systems = 4,env_borders = ((-10,10),(-10,10)),n_polygons = 100):
       self.systems = []
       self.areas = ProtectedArea(n_polygons)
       self.n_systems = n_systems
       self.systems_area = 0
+      self.constraints = LocationConstraints()
       self.env_borders = env_borders
       # self.blocked_systems = []
       obstacles_num = 0
@@ -290,13 +268,12 @@ class Enviroment:
 
 
    def draw(self,ax,optimized='location',mode=''):
-      #Drawing areas needed to be covered
-      
+      #Drawing Protection areas
       for poly in self.areas.polygons:
          x, y = poly.exterior.xy
-         ax.fill(x, y, hatch='//', color='lightgray', edgecolor='black')
+         ax.fill(x, y, color='lightgray', edgecolor='black')
       
-      #Drawing areas covered by systems
+      #Drawing systems coverage area
       for system in self.systems:
          if system.shape is None:
             continue
@@ -305,6 +282,11 @@ class Enviroment:
          elif isinstance(system.shape, MultiPolygon):
             for geom in system.shape.geoms:
                ax.plot(*geom.exterior.xy)
+
+      #Drawing Protection areas
+      for poly in self.constraints.polygons:
+         x, y = poly.exterior.xy
+         ax.fill(x, y, hatch='xx', color='indianred', edgecolor='black')
 
          #draw obstacles
       if isinstance(self.obstacles_multipolygon.shape, Polygon):
@@ -375,8 +357,14 @@ class Enviroment:
                continue
             for steering in steering_angles:
                for location in locations:
+                  # if not optimizing location, keep it as in last iteration
                   if optimized=='steering':
                      location = system.location
+                  else:
+                     # check if system location meets the constraints 
+                     constraints_poly = self.constraints.polygons
+                     if constraints_poly.contains(Point(location)):
+                        continue
 
                   system.update_values(steer_angle=steering,location=location,obstacles=None)
                   total_intersection_area = 0

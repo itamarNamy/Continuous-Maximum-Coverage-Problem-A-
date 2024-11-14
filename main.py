@@ -10,17 +10,17 @@ def drawing_example(optimization,path,save = False):
     env = Enviroment()
     env.draw(ax[0][0], optimized=None)
 
-    env.Adam_optimize(optimized=optimization)
-    env.draw(ax[0][1], optimized=optimization,mode='Adam')
+    # env.Adam_optimize(optimized=optimization)
+    # env.draw(ax[0][1], optimized=optimization,mode='Adam')
 
-    env.optimize(optimized=optimization)
-    env.draw(ax[1][0], optimized=optimization)
+    # env.optimize(optimized=optimization)
+    # env.draw(ax[1][0], optimized=optimization)
 
-    env.Adam_optimize(optimized=optimization)
-    env.draw(ax[1][1], optimized=optimization,mode='Combined')
-    now = datetime.datetime.now()
-    if save:
-        fig.savefig(os.path.join(path,now.strftime("%m%d-%H%M") +'.png')  ,bbox_inches='tight')
+    # env.Adam_optimize(optimized=optimization)
+    # env.draw(ax[1][1], optimized=optimization,mode='Combined')
+    # now = datetime.datetime.now()
+    # if save:
+    #     fig.savefig(os.path.join(path,now.strftime("%m%d-%H%M") +'.png')  ,bbox_inches='tight')
     plt.show()
 
 def greedy_combined_comp(optimization):
