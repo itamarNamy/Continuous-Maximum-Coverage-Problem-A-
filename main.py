@@ -3,15 +3,15 @@ from multiprocessing import Pool
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import pandas as pd
 import datetime
-
+import os
 def drawing_example(optimization,path,save = False):
     fig, ax = plt.subplots(figsize=(14, 14),nrows=2,ncols=2)
 
     env = Enviroment()
     env.draw(ax[0][0], optimized=None)
 
-    # env.Adam_optimize(optimized=optimization)
-    # env.draw(ax[0][1], optimized=optimization,mode='Adam')
+    env.Adam_optimize(optimized=optimization)
+    env.draw(ax[0][1], optimized=optimization,mode='Adam')
 
     # env.optimize(optimized=optimization)
     # env.draw(ax[1][0], optimized=optimization)
@@ -133,7 +133,7 @@ if __name__ == "__main__":
         # location / steering
     path = r'C:\Technion\RL\Code\Basic problem\figs\\' + optimization + ' optimization'
     # stats(optimization=optimization)
-    drawing_example(optimization=optimization,path = path, save= True)
+    drawing_example(optimization=optimization,path = path, save= False)
     # params_opt()
 
     # running_times = []

@@ -3,11 +3,12 @@ from shapely.geometry import Point,MultiPolygon,LineString
 from shapely.ops import unary_union
 from math import asin, atan2, cos, degrees, radians, sin
 import matplotlib.pyplot as plt
-import os
 import copy
-import pandas as pd
-import seaborn as sns
 from generator import *
+import math
+
+class ContinueI(Exception):
+    pass
 
 class System:
   def __init__(self,steer_angle,max_dist=10,opening_angle=90,location=(0,0),min_dist=0):
@@ -228,7 +229,46 @@ class Obstacle:
 
 class LocationConstraints:
    def __init__(self):
-      self.polygons = Polygon([(-2, -2), (-2, 2), (2, 2), (2, -2)]),
+      self.polygons = [Polygon([(-2, -2), (-2, 2), (2, 2), (2, -2)])]
+   def barrier(self,point):
+      min_dist  = self.min_dist_to_polygons(point)
+      return math.log(min_dist)
+
+   def point_to_segment_dist(self, x0, y0, x1, y1, x2, y2):
+    # Vector AB and AP
+    dx, dy = x2 - x1, y2 - y1
+    segment_len_sq = dx**2 + dy**2
+    if segment_len_sq == 0:  # segment is a point
+        return math.sqrt((x0 - x1)**2 + (y0 - y1)**2)
+    
+    # Projection factor
+    t = ((x0 - x1) * dx + (y0 - y1) * dy) / segment_len_sq
+    if t < 0:
+        # Closest point is x1, y1
+        return math.sqrt((x0 - x1)**2 + (y0 - y1)**2)
+    elif t > 1:
+        # Closest point is x2, y2
+        return math.sqrt((x0 - x2)**2 + (y0 - y2)**2)
+    else:
+        # Closest point is projection onto segment
+        proj_x, proj_y = x1 + t * dx, y1 + t * dy
+        return math.sqrt((x0 - proj_x)**2 + (y0 - proj_y)**2)
+
+# Function to find the minimal distance between a point and a set of polygons
+   def min_dist_to_polygons(self,point):
+    x0, y0 = point
+    min_distance = float('inf')
+    
+    for polygon in self.polygons:
+        for i in range(len(polygon)):
+            x1, y1 = polygon[i]
+            x2, y2 = polygon[(i + 1) % len(polygon)]
+            dist = self.point_to_segment_dist(x0, y0, x1, y1, x2, y2)
+            min_distance = min(min_distance, dist)
+    
+    return min_distance
+
+
 
       # self.polygons = generate_non_intersecting_polygons(n_polygons, n_points, radius)
 
@@ -356,20 +396,26 @@ class Enviroment:
             if self.systems[system_i].optimized == True:
                continue
             for steering in steering_angles:
+               continue_i = ContinueI()
                for location in locations:
+                  try:
                   # if not optimizing location, keep it as in last iteration
-                  if optimized=='steering':
-                     location = system.location
-                  else:
-                     # check if system location meets the constraints 
-                     constraints_poly = self.constraints.polygons
-                     if constraints_poly.contains(Point(location)):
-                        continue
+                     if optimized=='steering':
+                        location = system.location
+                     else:
+                        # check if system location meets the constraints 
+                        for poly in self.constraints.polygons:
+                           if poly.contains(Point(location)):
+                              raise continue_i
+                  except continue_i:
+                     continue
 
                   system.update_values(steer_angle=steering,location=location,obstacles=None)
                   total_intersection_area = 0
                   systems_multipolygon = unary_union([sys.shape for sys in self.systems])
-                  
+
+               except:
+
                   # compute the coverage for certain steering angle and system
 
                   intersection_result = systems_multipolygon.intersection(self.areas.unitedArea)
@@ -397,16 +443,29 @@ class Enviroment:
       
       def objective_function(new_position):
          systems_n = len(self.systems)
+         barriers = 0
+
          for system_i,system in enumerate(self.systems):
             if optimized == 'steering':
                system.update_values(steer_angle=new_position[system_i],obstacles=None)
             elif optimized == 'location':
+               for poly in self.constraints.polygons:
+                  if poly.contains(Point(new_position[system_i+systems_n],
+                                                         new_position[system_i+ 2 * systems_n])):
+                     barriers = float('inf')
+               else:
+                  barriers += self.constraints.barrier(new_position[system_i+systems_n],
+                                                      new_position[system_i+ 2 * systems_n])
+               
+
                system.update_values(steer_angle=new_position[system_i],location = 
                                  (new_position[system_i+systems_n],new_position[system_i+ 2 * systems_n])
                                  ,obstacles=None)
+
+
          systems_multipolygon = unary_union([sys.shape for sys in self.systems])
          intersection_result = systems_multipolygon.intersection(self.areas.unitedArea)
-         return intersection_result.area
+         return intersection_result.area + barriers
       
       def numerical_gradient(x, h):
         """Estimate gradient using finite differences."""
@@ -414,9 +473,9 @@ class Enviroment:
         for i in range(len(x)):
             x_h1 = np.copy(x)
             x_h2 = np.copy(x)
-            x_h1[i] += h[i]
-            x_h2[i] -= h[i]
-            grad[i] = (objective_function(x_h1) - objective_function(x_h2)) / (2 * h[i])
+            x_h1[i] += h[i] + h[i] * 0.1 * random.gauss()
+            x_h2[i] -= h[i] + h[i] * 0.1 * random.gauss()
+            grad[i] = (objective_function(x_h1) - objective_function(x_h2)) / (x_h1[i] - x_h2[i])
         return grad
 
 
