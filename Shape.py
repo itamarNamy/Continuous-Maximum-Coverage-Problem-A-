@@ -7,8 +7,7 @@ import copy
 from generator import *
 import math
 
-class ContinueI(Exception):
-    pass
+
 
 class System:
   def __init__(self,steer_angle,max_dist=10,opening_angle=90,location=(0,0),min_dist=0):
@@ -229,48 +228,16 @@ class Obstacle:
 
 class LocationConstraints:
    def __init__(self):
-      self.polygons = [Polygon([(-2, -2), (-2, 2), (2, 2), (2, -2)])]
-   def barrier(self,point):
-      min_dist  = self.min_dist_to_polygons(point)
-      return math.log(min_dist)
+      self.polygons = []#[Polygon([(-10, -1 + j), (-10, 1 + j), (10, 1 + j), (10, -1 + j)]) for j in [-12,0,12]]
 
-   def point_to_segment_dist(self, x0, y0, x1, y1, x2, y2):
-    # Vector AB and AP
-    dx, dy = x2 - x1, y2 - y1
-    segment_len_sq = dx**2 + dy**2
-    if segment_len_sq == 0:  # segment is a point
-        return math.sqrt((x0 - x1)**2 + (y0 - y1)**2)
-    
-    # Projection factor
-    t = ((x0 - x1) * dx + (y0 - y1) * dy) / segment_len_sq
-    if t < 0:
-        # Closest point is x1, y1
-        return math.sqrt((x0 - x1)**2 + (y0 - y1)**2)
-    elif t > 1:
-        # Closest point is x2, y2
-        return math.sqrt((x0 - x2)**2 + (y0 - y2)**2)
-    else:
-        # Closest point is projection onto segment
-        proj_x, proj_y = x1 + t * dx, y1 + t * dy
-        return math.sqrt((x0 - proj_x)**2 + (y0 - proj_y)**2)
-
-# Function to find the minimal distance between a point and a set of polygons
-   def min_dist_to_polygons(self,point):
-    x0, y0 = point
-    min_distance = float('inf')
-    
-    for polygon in self.polygons:
-        for i in range(len(polygon)):
-            x1, y1 = polygon[i]
-            x2, y2 = polygon[(i + 1) % len(polygon)]
-            dist = self.point_to_segment_dist(x0, y0, x1, y1, x2, y2)
-            min_distance = min(min_distance, dist)
-    
-    return min_distance
-
-
-
-      # self.polygons = generate_non_intersecting_polygons(n_polygons, n_points, radius)
+   def barrier(self,point_x, point_y, grads_size):
+      min_dist = min(Point(point_x,point_y).distance(polygon) for polygon in self.polygons)
+      if min_dist == 0:
+         return -grads_size
+      elif min_dist < grads_size:
+         return math.log(min_dist/grads_size)
+      else:
+         return 0
 
 
 class Enviroment:
@@ -281,13 +248,23 @@ class Enviroment:
       self.systems_area = 0
       self.constraints = LocationConstraints()
       self.env_borders = env_borders
+      self.grads_size =  self.areas.unitedArea.area / n_systems
       # self.blocked_systems = []
       obstacles_num = 0
-      # systems_locations = np.random.uniform(-10,10,size=(self.n_systems,2))
-      systems_x_locations = np.random.uniform(self.env_borders[0][0],self.env_borders[0][1],
-                                              size=(self.n_systems,))
-      systems_y_locations = np.random.uniform(self.env_borders[0][0],self.env_borders[0][1],
-                                              size=(self.n_systems,))
+      systems_x_locations = []
+      systems_y_locations = []
+      for _ in range(n_systems * 3):
+         x_loc = np.random.uniform(self.env_borders[0][0],self.env_borders[0][1])
+         y_loc = np.random.uniform(self.env_borders[1][0],self.env_borders[1][1])
+
+
+         if self.valid_position(x_loc,y_loc):
+            systems_x_locations.append(x_loc)
+            systems_y_locations.append(y_loc)
+            #the desired amount of systems can already be located
+         if len(systems_x_locations) == n_systems:
+            break
+
       systems_ranges = np.random.uniform((self.env_borders[0][1]-self.env_borders[0][0])/4,
                                          (self.env_borders[0][1]-self.env_borders[0][0])/2,
                                               size=(self.n_systems,))
@@ -298,13 +275,18 @@ class Enviroment:
          self.systems.append(System(steer_angle=steer_angles[system_i],max_dist = systems_ranges[system_i],
                                     location=(systems_x_locations[system_i],systems_y_locations[system_i]),
                              ))
+         # print((systems_x_locations[system_i],systems_y_locations[system_i]))
          self.systems[system_i].build_shape(self.obstacles_multipolygon)
 
          self.systems_area += self.systems[system_i].shape.area
          # blocked_system = self.obstacles.calc_shadow(self.systems[system_i])
          # self.blocked_systems.append()
 
-
+   def valid_position(self,x,y):
+      for poly in self.constraints.polygons:
+         if poly.contains(Point(x,y)):
+            return False
+      return True
 
 
    def draw(self,ax,optimized='location',mode=''):
@@ -323,10 +305,10 @@ class Enviroment:
             for geom in system.shape.geoms:
                ax.plot(*geom.exterior.xy)
 
-      #Drawing Protection areas
+      #Drawing forbidden areas
       for poly in self.constraints.polygons:
          x, y = poly.exterior.xy
-         ax.fill(x, y, hatch='xx', color='indianred', edgecolor='black')
+         ax.fill(x, y, hatch='xx', color='indianred', edgecolor='red',alpha = 0.5)
 
          #draw obstacles
       if isinstance(self.obstacles_multipolygon.shape, Polygon):
@@ -349,8 +331,8 @@ class Enviroment:
       ax.set_title(title)
       ax.set_xlim((self.env_borders[0][0] * 1.6,self.env_borders[0][1] * 1.6))
       ax.set_ylim((self.env_borders[1][0] * 1.6,self.env_borders[1][1] * 1.6))
-      ax.plot([], [], ' ', label=f"Total Protection Area: {self.areas.unitedArea.area:.2f}")
-      ax.plot([], [], ' ', label=f"Total Systems Area: {self.systems_area:.2f}")
+      # ax.plot([], [], ' ', label=f"Total Protection Area: {self.areas.unitedArea.area:.2f}")
+      # ax.plot([], [], ' ', label=f"Total Systems Area: {self.systems_area:.2f}")
       ax.plot([], [], ' ', label=f"Coverage Percentage: {100*coverage/self.areas.unitedArea.area:.2f}%")
       # ax.text(0, 0, f"Total Protection Area: {self.areas.unitedArea.area:.2f}", fontsize=8, color="purple")
       # ax.text(0, 1, f"Total Systems Area: {self.areas.unitedArea.area:.2f}", fontsize=8, color="purple")
@@ -396,25 +378,20 @@ class Enviroment:
             if self.systems[system_i].optimized == True:
                continue
             for steering in steering_angles:
-               continue_i = ContinueI()
                for location in locations:
-                  try:
                   # if not optimizing location, keep it as in last iteration
-                     if optimized=='steering':
-                        location = system.location
-                     else:
-                        # check if system location meets the constraints 
-                        for poly in self.constraints.polygons:
-                           if poly.contains(Point(location)):
-                              raise continue_i
-                  except continue_i:
+                  if optimized=='steering':
+                     
+                     location = system.location
+                     
+                  # check if system location meets the constraints 
+                  elif optimized=='location' and not self.valid_position(*location):
                      continue
+                  
 
                   system.update_values(steer_angle=steering,location=location,obstacles=None)
                   total_intersection_area = 0
                   systems_multipolygon = unary_union([sys.shape for sys in self.systems])
-
-               except:
 
                   # compute the coverage for certain steering angle and system
 
@@ -433,49 +410,48 @@ class Enviroment:
          self.systems[chosen_system].update_values(steer_angle=chosen_steering,
                                                    location=chosen_location,obstacles=None)
          self.systems[chosen_system].optimized = True
-         # print(f'max_intersection_area:{max_intersection_area}')
-         # print(f'chosen_system:{chosen_system}')
-         # print(f'chosen_steering:{chosen_steering}')
+
    def Adam_optimize(self, optimized='location', learning_rate=0.1, beta1=0.9, beta2=0.999,delta=1e-2, epsilon=1e-8, max_iter=1000):
       """
     Adam optimizer for finding local maxima of a black-box function.
     """
+      systems_n = len(self.systems)
+
+
       
-      def objective_function(new_position):
-         systems_n = len(self.systems)
+      def objective_function(new_position, t):
+         
          barriers = 0
+         
 
          for system_i,system in enumerate(self.systems):
+            x_ind = system_i+systems_n
+            y_ind = system_i + 2 * systems_n
             if optimized == 'steering':
                system.update_values(steer_angle=new_position[system_i],obstacles=None)
             elif optimized == 'location':
-               for poly in self.constraints.polygons:
-                  if poly.contains(Point(new_position[system_i+systems_n],
-                                                         new_position[system_i+ 2 * systems_n])):
-                     barriers = float('inf')
-               else:
-                  barriers += self.constraints.barrier(new_position[system_i+systems_n],
-                                                      new_position[system_i+ 2 * systems_n])
-               
+               if len(self.constraints.polygons) != 0:
+                  barriers += self.constraints.barrier(new_position[x_ind],new_position[y_ind],grads_size=self.grads_size)
 
                system.update_values(steer_angle=new_position[system_i],location = 
-                                 (new_position[system_i+systems_n],new_position[system_i+ 2 * systems_n])
+                                 (new_position[x_ind],new_position[y_ind])
                                  ,obstacles=None)
 
 
          systems_multipolygon = unary_union([sys.shape for sys in self.systems])
          intersection_result = systems_multipolygon.intersection(self.areas.unitedArea)
          return intersection_result.area + barriers
-      
-      def numerical_gradient(x, h):
+
+
+      def numerical_gradient(x, h, t):
         """Estimate gradient using finite differences."""
         grad = np.zeros_like(x)
         for i in range(len(x)):
             x_h1 = np.copy(x)
             x_h2 = np.copy(x)
-            x_h1[i] += h[i] + h[i] * 0.1 * random.gauss()
-            x_h2[i] -= h[i] + h[i] * 0.1 * random.gauss()
-            grad[i] = (objective_function(x_h1) - objective_function(x_h2)) / (x_h1[i] - x_h2[i])
+            x_h1[i] += h[i]
+            x_h2[i] -= h[i]
+            grad[i] = (objective_function(x_h1, t) - objective_function(x_h2, t)) / (x_h1[i] - x_h2[i])
         return grad
 
 
@@ -495,15 +471,35 @@ class Enviroment:
       elif optimized == 'location':
          deltas = [delta, delta * 0.1, delta * 0.1]
          deltas_arr = np.repeat(deltas,len(self.systems))
+      last_position = position
 
       for t in range(1, max_iter + 1):
-         gradient = numerical_gradient(x = position, h = deltas_arr)
+         gradient = numerical_gradient(x = position, h = deltas_arr, t = t)
+         # if optimized == 'location':
+         #    grads_size = (gradient[systems_n:] * t + grads_size) / (t + 1)
+
+         #Adam implemantation
          m = beta1 * m + (1 - beta1) * gradient
          v = beta2 * v + (1 - beta2) * (gradient ** 2)
          m_hat = m / (1 - beta1 ** t)
          v_hat = v / (1 - beta2 ** t)
          velocity = beta1 * velocity + (1 - beta1) * gradient
-         position += learning_rate * m_hat / (np.sqrt(v_hat) + epsilon)
+         if optimized == 'location':
+            for system_i in range(len(self.systems)):
+               x_ind = system_i + systems_n
+               y_ind = system_i + 2 * systems_n
+               if not self.valid_position(position[x_ind],position[y_ind]):
+                  position[x_ind] = last_position[x_ind]
+                  position[x_ind] = last_position[y_ind]
+               else:
+                  position[x_ind] += learning_rate * m_hat[x_ind] / (np.sqrt(v_hat[x_ind]) + epsilon)
+                  position[y_ind] += learning_rate * m_hat[y_ind] / (np.sqrt(v_hat[y_ind]) + epsilon)
+               # anyway the steering will be updated
+               position[system_i] += learning_rate * m_hat[system_i] / (np.sqrt(v_hat[system_i]) + epsilon)
+         elif optimized == 'steering':
+            position += learning_rate * m_hat / (np.sqrt(v_hat) + epsilon)
+            
+         last_position = position
          # if t%100==0:
          #    print(f'step {t} position: {position}')
          #    print(f'step {t}: {objective_function(position)}')

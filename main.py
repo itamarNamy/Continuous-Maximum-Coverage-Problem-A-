@@ -13,14 +13,14 @@ def drawing_example(optimization,path,save = False):
     env.Adam_optimize(optimized=optimization)
     env.draw(ax[0][1], optimized=optimization,mode='Adam')
 
-    # env.optimize(optimized=optimization)
-    # env.draw(ax[1][0], optimized=optimization)
-
-    # env.Adam_optimize(optimized=optimization)
-    # env.draw(ax[1][1], optimized=optimization,mode='Combined')
-    # now = datetime.datetime.now()
-    # if save:
-    #     fig.savefig(os.path.join(path,now.strftime("%m%d-%H%M") +'.png')  ,bbox_inches='tight')
+    env.optimize(optimized=optimization,angles_num = 10,x_coords_num = 8,y_coords_num = 8)
+    env.draw(ax[1][0], optimized=optimization)
+    
+    env.Adam_optimize(optimized=optimization)
+    env.draw(ax[1][1], optimized=optimization,mode='Combined')
+    now = datetime.datetime.now()
+    if save:
+        fig.savefig(os.path.join(path,now.strftime("%m%d-%H%M") +'.png')  ,bbox_inches='tight')
     plt.show()
 
 def greedy_combined_comp(optimization):
@@ -99,20 +99,6 @@ def stats(optimization):
     results_df.to_csv(output_path,mode='a',index=False,header=not os.path.exists(output_path))
 
 
-
-    # data={'init_coverage':init_coverage,
-    #       'adam_coverage':adam_coverage,
-    #       'bf_coverage':bf_coverage,
-    #       'combined_coverage':combined_coverage}
-    # df_stats = pd.DataFrame(data=data)
-    # df_stats['Ratio_adam'] = df_stats['adam_coverage'] / df_stats['init_coverage']
-    # df_stats['Ratio_bf'] = df_stats['bf_coverage'] / df_stats['init_coverage']
-    # df_stats['Ratio_combined'] = df_stats['combined_coverage'] / df_stats['init_coverage']
-    # df_stats['Gap_adam'] = df_stats['adam_coverage'] - df_stats['init_coverage']
-    # df_stats['Gap_bf'] = df_stats['bf_coverage'] - df_stats['init_coverage']
-    # df_stats['Gap_combined'] = df_stats['combined_coverage'] - df_stats['init_coverage']
-    # df_stats.to_csv(os.path.join(r'C:\Technion\RL\Code\Basic problem\data tables','stats.csv'),mode='a',
-    # index=False,header=False)
     # df_melted = df_stats.melt(value_vars=['Ratio_2_to_1', 'Ratio_3_to_1', 'Ratio_4_to_1'], var_name='Ratio Type', value_name='Ratio')
     # fig, ax = plt.subplots(figsize=(10, 6))
     # for opt_name in ['adam','bf','combined']:
@@ -133,7 +119,7 @@ if __name__ == "__main__":
         # location / steering
     path = r'C:\Technion\RL\Code\Basic problem\figs\\' + optimization + ' optimization'
     # stats(optimization=optimization)
-    drawing_example(optimization=optimization,path = path, save= False)
+    drawing_example(optimization=optimization,path = path, save= True)
     # params_opt()
 
     # running_times = []
