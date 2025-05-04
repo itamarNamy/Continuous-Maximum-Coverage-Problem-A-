@@ -4,6 +4,8 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 import pandas as pd
 import datetime
 import os
+from itertools import product
+
 def drawing_example(optimization,path,save = False):
     fig, ax = plt.subplots(figsize=(14, 14),nrows=2,ncols=2)
 
@@ -23,20 +25,32 @@ def drawing_example(optimization,path,save = False):
         fig.savefig(os.path.join(path,now.strftime("%m%d-%H%M") +'.png')  ,bbox_inches='tight')
     plt.show()
 
-def greedy_combined_comp(optimization):
+def greedy_combined_comp(optimization,env_args):
+    stats_keys = ['init_coverage', 'adam_coverage', 'bf_coverage', 'combined_coverage', 'systems_area',
+                   'protection_area','Number_of_systems','Number_of_areas','avreage_system_size',
+            'average_area_size','precision','recall','Fscore']
+    run_stats = dict.fromkeys(stats_keys)
     #Building and optimizing scenario
-    env = Enviroment()
-    init_coverage = env.compute_coverage()
-    systems_area = env.systems_area
-    protection_area = env.areas.unitedArea.area
-    # print(f'In function init_coverage :{init_coverage}')
+    env = Enviroment(**env_args)
+
+    run_stats['init_coverage'] = env.compute_coverage()
+    run_stats['systems_area'] = env.systems_area
+    run_stats['protection_area'] = env.areas.unitedArea.area
+    run_stats['env_area'] = np.linalg.norm(env.env_borders)
     env.Adam_optimize()
-    adam_coverage = env.compute_coverage()
+    run_stats['adam_coverage'] = env.compute_coverage()
     env.optimize(optimized=optimization)
-    bf_coverage = env.compute_coverage()
+    run_stats['bf_coverage'] = env.compute_coverage()
     env.Adam_optimize()
-    combined_coverage = env.compute_coverage()
-    return [init_coverage, adam_coverage, bf_coverage, combined_coverage, systems_area, protection_area]
+    run_stats['combined_coverage'] = env.compute_coverage()
+    run_stats['Number_of_systems'] = env.n_systems
+    run_stats['Number_of_areas'] = env.n_polygons
+    run_stats['average_system_size'] = run_stats['systems_area'] / run_stats['Number_of_systems']
+    run_stats['average_area_size'] = run_stats['protection_area'] / run_stats['Number_of_areas']
+    run_stats['precision'] = run_stats['combined_coverage']/run_stats['systems_area']
+    run_stats['recall'] = run_stats['combined_coverage']/run_stats['protection_area']
+    run_stats['Fscore'] = run_stats['recall'] * run_stats['precision'] / (run_stats['recall'] + run_stats['precision'])
+    return run_stats
 
 def run_optimization(env:Enviroment, method:str, opt_kind:str ,params:dict)->float:
     if method == 'Adam':
@@ -66,36 +80,44 @@ def params_opt():
 
 
 
-def stats(optimization):
-
-    results = []
-
-
-    # df_stats = pd.read_csv(os.path.join(r'C:\Technion\RL\Code\Basic problem\data tables','stats.csv'))
-    # with Pool(processes=2) as pool:  # Number of processes
+def stats(optimization, repeats = 2):
+    border_vals = np.linspace(5, 15, 2)  # [5.0, 10.0, 15.0]
+    borders = list(((-v, v), (-v, v)) for v in border_vals)
+    env_params_values = {'n_systems': np.arange(1,2,1), 'n_polygons': np.arange(99,100,1),
+                         'polygon_size':np.linspace(0.5,2,2),'env_borders':borders}
+    keys = list(env_params_values.keys())
+    value_lists = list(env_params_values.values())
     
-    #     results = pool.starmap(scenario_optimization, [(optimization,) for _ in range(2)])
+    # Compute the product of all value lists
+    combos = product(*value_lists)
+    
+    # For each tuple in the product, zip it with the keys to form a dictionary
+    dict_combs = []
+    for c in combos:
+        combination_dict = dict(zip(keys, c))
+        dict_combs.append(combination_dict)
+    results = []
     with ProcessPoolExecutor() as executor:
-        futures = [executor.submit(greedy_combined_comp,optimization) for _ in range(4)]
+
+        futures = [executor.submit(greedy_combined_comp,optimization, dict_combs[i]) for i in range(len(dict_combs))
+                   for _ in range(repeats)]
 
         # Process the results as they complete
         for future in as_completed(futures):
-            
-            keys = ['init_coverage', 'adam_coverage', 'bf_coverage', 'combined_coverage', 'systems_area', 'protection_area',
-            'precision','recall','Fscore']
-            stats_dict = {key: None for key in keys}
-            
-            curr_results = future.result()
+            result = future.result()
+            results.append(result)
 
-            for key_i,key in enumerate(keys[:-3]):#precision and recall can be computed only after loop
-                stats_dict[key] = curr_results[key_i]
-            stats_dict['precision'] = stats_dict['combined_coverage']/stats_dict['systems_area']
-            stats_dict['recall'] = stats_dict['combined_coverage']/stats_dict['protection_area']
-            stats_dict['Fscore'] = stats_dict['recall'] * stats_dict['precision'] / (stats_dict['recall'] + stats_dict['precision'])
-            results.append(stats_dict)
+            # stats_dict = {key: None for key in keys}
+            
+            # curr_results = future.result()
+
+            # for key_i,key in enumerate(keys[:-3]):#precision and recall can be computed only after loop
+            #     stats_dict[key] = curr_results[key_i]
+
+            
     
     results_df = pd.DataFrame(results)
-    output_path = os.path.join(r'C:\Technion\RL\Code\Basic problem\data tables',optimization + ' stats.csv')
+    output_path = os.path.join(r'.\data tables',optimization + ' stats.csv')
     results_df.to_csv(output_path,mode='a',index=False,header=not os.path.exists(output_path))
 
 
@@ -115,11 +137,12 @@ def stats(optimization):
 
 
 if __name__ == "__main__":
-    optimization='location'
-        # location / steering
-    path = r'C:\Technion\RL\Code\Basic problem\figs\\' + optimization + ' optimization'
+    optimization='steering'
+    stats(optimization)
+    # location / steering
+    # path = r'.\figs\\' + optimization + ' optimization'
     # stats(optimization=optimization)
-    drawing_example(optimization=optimization,path = path, save= True)
+    # drawing_example(optimization=optimization,path = path, save= True)
     # params_opt()
 
     # running_times = []

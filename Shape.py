@@ -241,9 +241,13 @@ class LocationConstraints:
 
 
 class Enviroment:
-   def __init__(self,n_systems = 4,env_borders = ((-10,10),(-10,10)),n_polygons = 100):
+   def __init__(self,n_systems = 4,env_borders = ((-10,10),(-10,10)),n_polygons = 100,
+                 polygon_size = 0.5):
       self.systems = []
-      self.areas = ProtectedArea(n_polygons)
+      self.n_polygons = n_polygons
+      expected_radius = np.sqrt(polygon_size /1.215) # calculated with monte carlo
+      self.areas = ProtectedArea(n_polygons = n_polygons,
+                                 radius = expected_radius) 
       self.n_systems = n_systems
       self.systems_area = 0
       self.constraints = LocationConstraints()
@@ -277,10 +281,11 @@ class Enviroment:
                              ))
          # print((systems_x_locations[system_i],systems_y_locations[system_i]))
          self.systems[system_i].build_shape(self.obstacles_multipolygon)
-
+         print(f'system {system_i} area: {self.systems[system_i].shape.area}')
          self.systems_area += self.systems[system_i].shape.area
          # blocked_system = self.obstacles.calc_shadow(self.systems[system_i])
          # self.blocked_systems.append()
+      print(f'total area:{self.systems_area}')
 
    def valid_position(self,x,y):
       for poly in self.constraints.polygons:
@@ -500,9 +505,7 @@ class Enviroment:
             position += learning_rate * m_hat / (np.sqrt(v_hat) + epsilon)
             
          last_position = position
-         # if t%100==0:
-         #    print(f'step {t} position: {position}')
-         #    print(f'step {t}: {objective_function(position)}')
+
       return position
    def copy(self):
         # Using deepcopy to create a deep copy of the object
